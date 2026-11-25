@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Neon Goals</string>
+    <string name="title_activity_main">Neon Goals</string>
+    <string name="package_name">app.olina.neongoals</string>
+    <string name="custom_url_scheme">app.olina.neongoals</string>
+</resources>
