@@ -206,6 +206,12 @@ input:focus, select:focus, textarea:focus { border-color: var(--cyan); outline: 
 .dot:disabled { opacity: .4; cursor: default; }
 .dot svg { width: 16px; height: 16px; stroke: var(--ink); }
 .hcard { cursor: default; }
+.daynav { display: flex; align-items: center; gap: 4px; margin: 2px 0 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 2px 4px; }
+.daylab { flex: 1; min-width: 0; min-height: 48px; border: 0; background: transparent; color: var(--text); font-family: var(--display); font-weight: 600; font-size: 16px; text-transform: capitalize; }
+.daylab small { display: block; font-family: var(--body); font-weight: 600; font-size: 12px; color: var(--cyan); text-transform: none; }
+.qadd { display: flex; gap: 8px; margin-bottom: 6px; }
+.qadd input { flex: 1; min-width: 0; }
+.sec-count { color: var(--cyan); text-transform: none; letter-spacing: 0; margin-left: 6px; }
 </style>
 </head>
 <body>
@@ -232,7 +238,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--cyan); outline: 
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4M21 13v2a3 3 0 0 1-3 3H3"/></svg>Привычки
     </button>
     <button class="tab" role="tab" data-action="tab" data-tab="today" id="tab-today">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M8 3v4M16 3v4M3.5 10h17"/></svg>Сегодня
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11M9 12h11M9 18h11M3.5 6l1.2 1.2L7 4.8M3.5 12l1.2 1.2L7 10.8M3.5 18l1.2 1.2L7 16.8"/></svg>Мой день
     </button>
   </div>
 </nav>
@@ -280,8 +286,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--cyan); outline: 
   /* ---------- state + storage ---------- */
   var state = loadLocal();
   function loadLocal() {
-    try { var r = localStorage.getItem(KEY); if (r) { var s = JSON.parse(r); if (s && Array.isArray(s.goals)) { if (!Array.isArray(s.habits)) s.habits = []; return s; } } } catch (e) {}
-    return { goals: [], habits: [], updatedAt: 0 };
+    try { var r = localStorage.getItem(KEY); if (r) { var s = JSON.parse(r); if (s && Array.isArray(s.goals)) { if (!Array.isArray(s.habits)) s.habits = []; if (!Array.isArray(s.daily)) s.daily = []; return s; } } } catch (e) {}
+    return { goals: [], habits: [], daily: [], updatedAt: 0 };
   }
   function saveLocal() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
   function persist() { state.updatedAt = Date.now(); saveLocal(); }
@@ -318,13 +324,13 @@ input:focus, select:focus, textarea:focus { border-color: var(--cyan); outline: 
   }
 
   /* ---------- rendering ---------- */
-  var tab = "goals", openId = null;
+  var tab = "goals", openId = null, viewDay = today(), lastToday = today();
 
   function renderAll() { renderHeader(); renderView(); if (openId) renderDetailParts(); }
 
   function renderHeader() {
     $("today-date").textContent = new Date().toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" });
-    $("screen-title").textContent = tab === "goals" ? "Цели" : tab === "habits" ? "Привычки" : "Сегодня";
+    $("screen-title").textContent = tab === "goals" ? "Цели" : tab === "habits" ? "Привычки" : dayTitle();
     var act = 0, ach = 0, hn = state.habits.length;
     state.goals.forEach(function (g) { stats(g).achieved ? ach++ : act++; });
     $("summary").textContent = tab === "goals"
@@ -336,14 +342,20 @@ input:focus, select:focus, textarea:focus { border-color: var(--cyan); outline: 
     fab.dataset.action = tab === "habits" ? "new-habit" : "new-goal";
     fab.setAttribute("aria-label", tab === "habits" ? "Новая привычка" : "Новая цель");
   }
+  function dayTitle() { var d = diffDays(viewDay, today()); return d === 0 ? "Сегодня" : d === 1 ? "Завтра" : d === -1 ? "Вчера" : longDate(viewDay); }
   function todaySummary() {
-    var t = today(), total = 0, done = 0;
+    var t = viewDay, total = 0, done = 0;
     state.goals.forEach(function (g) { g.tasks.forEach(function (x) { if (x.date === t) { total++; if (x.done) done++; } }); });
-    state.habits.forEach(function (h) { var hs = habitStats(h); if (hs.dueToday) { total++; if (hs.doneToday) done++; } });
-    return total ? "Выполнено " + done + " из " + total : "На сегодня ничего нет";
+    state.daily.forEach(function (x) { if (x.date === t) { total++; if (x.done) done++; } });
+    if (t === today()) state.habits.forEach(function (h) { var hs = habitStats(h); if (hs.dueToday) { total++; if (hs.doneToday) done++; } });
+    return total ? "Выполнено " + done + " из " + total : "На этот день ничего нет";
   }
 
-  function renderView() { $("view").innerHTML = tab === "goals" ? goalsView() : tab === "habits" ? habitsView() : todayView(); }
+  function renderView() {
+    var keep = $("d-title") ? $("d-title").value : "";
+    $("view").innerHTML = tab === "goals" ? goalsView() : tab === "habits" ? habitsView() : todayView();
+    if (keep && $("d-title")) $("d-title").value = keep;
+  }
 
   function goalCard(g) {
     var s = stats(g), color = s.achieved ? DONE_COLOR : goalColor(g), dl = deadlineText(g, s);
@@ -373,14 +385,41 @@ input:focus, select:focus, textarea:focus { border-color: var(--cyan); outline: 
       (t.done ? "" : '<button class="icon-btn" aria-label="Перенести задачу" data-action="resched" data-g="' + g.id + '" data-t="' + t.id + '">' + CAL + '</button>') +
       '<button class="icon-btn" aria-label="Удалить задачу" data-action="del-task" data-g="' + g.id + '" data-t="' + t.id + '">' + TRASH + '</button></div>';
   }
+  var FWD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>';
+  function dailyRow(x, showDate) {
+    var late = x.date < today();
+    return '<div class="task' + (x.done ? " done" : "") + '" style="--gc:var(--cyan)">' +
+      '<button class="check" role="checkbox" aria-checked="' + !!x.done + '" aria-label="Выполнено: ' + esc(x.title) + '" data-action="toggle-daily" data-id="' + x.id + '">' + CHECK + '</button>' +
+      '<div class="txt"><span class="title">' + esc(x.title) + '</span>' + (showDate ? '<small>' + esc(dayLabel(x.date)) + '</small>' : '') + '</div>' +
+      (x.done ? "" : '<button class="icon-btn" aria-label="' + (late ? "Перенести на сегодня" : "Перенести на следующий день") + '" data-action="move-daily" data-id="' + x.id + '">' + CAL + '</button>') +
+      '<button class="icon-btn" aria-label="Удалить дело" data-action="del-daily" data-id="' + x.id + '">' + TRASH + '</button></div>';
+  }
+  function dailyBlock(day) {
+    var items = state.daily.filter(function (x) { return x.date === day; });
+    var late = day === today() ? state.daily.filter(function (x) { return !x.done && x.date < day; }).sort(function (a, b) { return a.date < b.date ? -1 : 1; }) : [];
+    var h = "";
+    if (late.length) h += '<div class="section-title overdue">Не сделано раньше</div><div class="tasks">' + late.map(function (x) { return dailyRow(x, true); }).join("") + '</div>';
+    if (items.length) {
+      var done = items.filter(function (x) { return x.done; }).length;
+      h += '<div class="section-title">Мои дела<span class="sec-count">' + done + ' из ' + items.length + '</span></div><div class="tasks">' + items.map(function (x) { return dailyRow(x, false); }).join("") + '</div>';
+    }
+    return h;
+  }
+  function dayHeader() {
+    var isNow = viewDay === today();
+    return '<div class="daynav"><button class="icon-btn" aria-label="Предыдущий день" data-action="day-prev">' + BACK + '</button>' +
+      '<button class="daylab" data-action="day-today"' + (isNow ? " disabled" : "") + '>' + esc(dayLabel(viewDay)) + (isNow ? "" : "<small>Вернуться к сегодня</small>") + '</button>' +
+      '<button class="icon-btn" aria-label="Следующий день" data-action="day-next">' + FWD + '</button></div>' +
+      '<form class="qadd" data-form="daily" autocomplete="off"><input type="text" id="d-title" maxlength="140" aria-label="Новое дело" placeholder="Новое дело" required><button class="btn" type="submit">Добавить</button></form>';
+  }
   function todayView() {
-    var t = today(), over = [], now = [], soon = [], limit = addDays(t, 7);
+    var td = today(), t = viewDay, isNow = t === td, over = [], now = [], soon = [], limit = addDays(t, 7);
     state.goals.forEach(function (g) {
       g.tasks.forEach(function (x) {
         var row = { g: g, t: x };
         if (x.date === t) now.push(row);
-        else if (!x.done && x.date < t) over.push(row);
-        else if (!x.done && x.date > t && x.date <= limit) soon.push(row);
+        else if (isNow && !x.done && x.date < t) over.push(row);
+        else if (isNow && !x.done && x.date > t && x.date <= limit) soon.push(row);
       });
     });
     function block(title, rows, cls) {
@@ -389,9 +428,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--cyan); outline: 
       return '<div class="section-title ' + (cls || "") + '">' + title + '</div><div class="tasks">' +
         rows.map(function (r) { return taskRow(r.g, r.t, true); }).join("") + '</div>';
     }
-    var h = block("Просрочено", over, "overdue") + block("Сегодня", now) + habitsToday() + block("Ближайшие 7 дней", soon);
-    if (!h) h = '<div class="empty"><b>Свободный день</b>' + (state.goals.length ? "Задач на сегодня нет. Добавь их внутри цели." : "Сначала создай цель на вкладке «Цели».") + '</div>';
-    return h;
+    var body = dailyBlock(t) + block("Просрочено по целям", over, "overdue") + block("Задачи целей", now) + (isNow ? habitsToday() : "") + block("Ближайшие задачи целей", soon);
+    if (!body) body = '<div class="empty"><b>День свободен</b>Впиши первое дело в поле выше или добавь задачу в одной из целей.</div>';
+    return dayHeader() + body;
   }
 
   /* ---------- habits ---------- */
@@ -637,7 +676,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--cyan); outline: 
       '<div class="actions"><button type="button" class="btn" data-action="copy-backup">Скопировать</button></div>' +
       '<div class="field" style="margin-top:22px"><label for="b-in">Восстановить из копии</label><textarea id="b-in" placeholder="Вставь сюда скопированный текст"></textarea></div>' +
       '<div class="actions"><button type="button" class="btn ghost" data-action="close-sheet">Закрыть</button><button type="button" class="btn danger" data-action="restore">Восстановить</button></div>');
-    $("b-text").value = JSON.stringify({ app: "neon-goals", goals: state.goals, habits: state.habits });
+    $("b-text").value = JSON.stringify({ app: "neon-goals", goals: state.goals, habits: state.habits, daily: state.daily });
   }
   function copyBackup() {
     var ta = $("b-text");
@@ -655,7 +694,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--cyan); outline: 
       return;
     }
     delArmed = null;
-    state.goals = data.goals; if (Array.isArray(data.habits)) state.habits = data.habits; persist(); closeSheet(); renderAll(); toast("Данные восстановлены");
+    state.goals = data.goals; if (Array.isArray(data.habits)) state.habits = data.habits; if (Array.isArray(data.daily)) state.daily = data.daily; persist(); closeSheet(); renderAll(); toast("Данные восстановлены");
   }
 
   /* ---------- actions ---------- */
@@ -695,6 +734,30 @@ input:focus, select:focus, textarea:focus { border-color: var(--cyan); outline: 
       persist(); closeSheet(); renderAll();
     }
     else if (a === "resched") reschedSheet(el.dataset.g, el.dataset.t);
+    else if (a === "day-prev") { viewDay = addDays(viewDay, -1); renderAll(); }
+    else if (a === "day-next") { viewDay = addDays(viewDay, 1); renderAll(); }
+    else if (a === "day-today") { viewDay = today(); renderAll(); }
+    else if (a === "toggle-daily") {
+      state.daily.forEach(function (x) { if (x.id === el.dataset.id) x.done = !x.done; });
+      persist(); renderAll();
+    }
+    else if (a === "move-daily") {
+      var mv = null; state.daily.forEach(function (x) { if (x.id === el.dataset.id) mv = x; });
+      if (!mv) return;
+      mv.date = mv.date < today() ? today() : addDays(mv.date, 1);
+      persist(); renderAll(); toast("Перенесено: " + dayLabel(mv.date));
+    }
+    else if (a === "del-daily") {
+      var key4 = "d" + el.dataset.id;
+      if (delArmed !== key4) {
+        delArmed = key4; el.style.color = "var(--danger)"; el.setAttribute("aria-label", "Нажми ещё раз, чтобы удалить");
+        setTimeout(function () { if (delArmed === key4) { delArmed = null; el.style.color = ""; el.setAttribute("aria-label", "Удалить дело"); } }, 3000);
+        return;
+      }
+      delArmed = null;
+      state.daily = state.daily.filter(function (x) { return x.id !== el.dataset.id; });
+      persist(); renderAll();
+    }
     else if (a === "quick-date") { $("r-date").value = addDays(today(), +el.dataset.n); }
     else if (a === "edit-goal") goalForm(findGoal(openId));
     else if (a === "color") {
@@ -744,6 +807,13 @@ input:focus, select:focus, textarea:focus { border-color: var(--cyan); outline: 
   document.addEventListener("submit", function (e) {
     var f = e.target.closest("[data-form]"); if (!f) return;
     e.preventDefault();
+    if (f.dataset.form === "daily") {
+      var dt = $("d-title").value.trim(); if (!dt) return;
+      state.daily.push({ id: uid(), title: dt, date: viewDay, done: false });
+      $("d-title").value = ""; persist(); renderAll();
+      var di = $("d-title"); if (di) di.focus();
+      return;
+    }
     if (f.dataset.form === "habit") { submitHabit(f); return; }
     if (f.dataset.form === "resched") { submitResched(f); return; }
     if (f.dataset.form === "goal") {
@@ -761,7 +831,11 @@ input:focus, select:focus, textarea:focus { border-color: var(--cyan); outline: 
     }
   });
   document.addEventListener("change", function (e) { if (e.target && e.target.id === "h-kind") updateKindBlocks(); });
-  document.addEventListener("visibilitychange", function () { if (!document.hidden) renderAll(); });
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) return;
+    if (lastToday !== today()) { if (viewDay === lastToday) viewDay = today(); lastToday = today(); }
+    renderAll();
+  });
 
   /* ---------- start ---------- */
   renderAll();
