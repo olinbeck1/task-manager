@@ -47,6 +47,7 @@ jobs:
       - name: Сборка APK
         working-directory: android
         run: |
+          sed -i 's/\r$//' gradlew
           chmod +x gradlew
           ./gradlew assembleDebug
 
